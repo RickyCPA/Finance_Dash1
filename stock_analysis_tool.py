@@ -183,7 +183,7 @@ with fundamental_data:
         st.write('Debt to Equity Ratio: ', round(debtToEquity,4))
 
         intCoverage = float(income_statement.iat[income_statement.index.get_loc('operatingIncome'),0])/float(income_statement.iat[income_statement.index.get_loc('interestExpense'),0])
-        st.write('Interest Coverage Ratio: ', round(debtToEquity,4))
+        st.write('Interest Coverage Ratio: ', round(intCoverage,4))
 
     with finCol3:
         st.subheader('Efficiency')
