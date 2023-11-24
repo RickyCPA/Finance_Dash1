@@ -19,10 +19,14 @@ st.write("Use this application to analyze a security and compare its performance
 ind_dict = {"^GSPC":"S&P 500", "^DJI":"DJIA", "^IXIC":"NASDAQ"}
 ind_dict_keys = tuple(ind_dict.keys())
 
-#Initialize variables for graph and computation purposes
+#Initialize user selected variables for graph and analytic purposes
 entCol1,entCol2,entCol3, entCol4 = st.columns(4)
+
+#Input of selected ticker with controls on post input formatting to avoid API errors
 with entCol1:
     ticker = st.text_input('Ticker Symbol')
+    ticker = ticker.upper()
+    ticker = ticker.replace(" ","")
 with entCol2:
     start_date = st.date_input('Start Date',value = date.today()-timedelta(days = 1095))
 with entCol3:
@@ -40,9 +44,13 @@ if not ticker:
 data = yf.download(ticker,start_date,end_date)
 ref_data = yf.download(ref_index,start_date,end_date)
 
+#compute and print current price for ticker chosen
+ticker_price = round(data.iat[-1,data.columns.get_loc('Adj Close')],2)
+st.text('{0} Price: {1}'.format(ticker,ticker_price))
 
 #initialize graph of returns of ticker and control data, subplots support multiple Y axes for close price
 fig = make_subplots(specs =[[{"secondary_y": True}]])
+
 #add primary ticker data, secondary y false since this will be the leftmost y axis
 fig.add_trace(
     go.Scatter(x=data.index, y=data['Adj Close'], name=ticker),
@@ -66,17 +74,18 @@ fig.update_yaxes(title_text='{0} Adjusted Close Price'.format(ind_dict[ref_index
 st.plotly_chart(fig)
 
 #initialize separation between pricing/fundamental data and valuation modelling
-
 fundamentals, valuation = st.tabs(['Fundamental and Pricing Details', 'Stock Price Valuation'])
 
 with fundamentals:
     #initialize tabs for drilldown
     pricing_data, fundamental_data, news =st.tabs(['Pricing Data', 'Fundamental Data', 'News'])
-
+   
+    #compute and present risk adjusted return using sharpe ratio
     with pricing_data:
         st.header('Price Details')
         st.write('Note 1: Annualization of return completed by considering day over day return, deriving the average, and adjusting for 252 trading days.') 
         st.write('Note 2: Risk adjustment conducted without including a "risk free rate." Adjustment normalizes for volatility of returns using Standard Deviation. Values above 1.0 are preferred.')
+   
         #initialize new dataframes to hold percentage change column for ticker and control
         data_change = data
         data_change['% Change'] = (data_change['Adj Close']/data_change['Adj Close'].shift(1)-1)*100
@@ -121,23 +130,30 @@ with fundamentals:
             st.write('Difference: ',delta_stdev,'%')
             st.write('Difference: ',delta_riskret)
         
-        #print price data
+        #print price data table for chosen ticker
         st.subheader('{0} Adjusted Close Price Data'.format(ticker))
-        st.write(data_change)
+        st.write(data_change[::-1])
 
+    #show financial statement data and key analyses
     with fundamental_data:
         st.header('Financial Statement Data for: {0}'.format(ticker))
+        
+        #form used to control flow, minimize errors due to no API key, and limit API calls for users. 
+        #using form prevents accidental calls to API upon application refresh.
         with st.form('Alpha Vantage Key'):
             key = st.text_input('Alpha Vantage Key: ')
             submitted = st.form_submit_button('OK')
-            
+
+            #error handling if logic, do not call API unless key is passed.
             if submitted:
                 if not key:
                     st.write('Please input an Alpha Vantage Key for details to be retrieved.')
                     st.write('Sign up for a free api key at: https://www.alphavantage.co/support/#api-key')
                 else:
+                    #API setup, declare key and desired output format
                     fd = FundamentalData(key,output_format = 'pandas')
-
+                    
+                    #API call for three main financial statements. Transform so years are in columns and key figure labels are in rows.
                     bs = fd.get_balance_sheet_annual(ticker)[0]
                     balance_sheet = bs.T[2:]
                     balance_sheet.columns=list(bs.T.iloc[0])
@@ -150,10 +166,12 @@ with fundamentals:
                     cash_flow = cf.T[2:]
                     cash_flow.columns = list(cf.T.iloc[0])
                     
+                    #Create columns for financial statement ratios
                     st.subheader('Financial Statement Ratios for Most Recent Year End')
                     st.write('Note: Effective Tax Rate may be an expense or benefit depending on the company')
                     finCol1, finCol2, finCol3 = st.columns(3)
-
+                    
+                    #Compute and present liquidity ratios
                     with finCol1:
                         st.subheader('Liquidity')
 
@@ -169,6 +187,7 @@ with fundamentals:
                         opCashRatio = float(cash_flow.iat[cash_flow.index.get_loc('operatingCashflow'),0])/float(balance_sheet.iat[balance_sheet.index.get_loc('totalCurrentLiabilities'),0])
                         st.write('Operating Cash Flow Ratio: ', round(opCashRatio,4))
 
+                    #Compute and present leverage ratios
                     with finCol2:
                         st.subheader('Leverage')
 
@@ -181,6 +200,7 @@ with fundamentals:
                         intCoverage = float(income_statement.iat[income_statement.index.get_loc('operatingIncome'),0])/float(income_statement.iat[income_statement.index.get_loc('interestExpense'),0])
                         st.write('Interest Coverage Ratio: ', round(intCoverage,4))
 
+                    #Compute and present Efficiency ratios
                     with finCol3:
                         st.subheader('Efficiency')
 
@@ -209,6 +229,7 @@ with fundamentals:
                     st.subheader('Statement of Cash Flows')
                     st.write(cash_flow)
 
+    #Call stocknews API and present top 10 reported headlines
     with news:
         st.header(f'News for: {ticker}')
         sn = StockNews(ticker, save_news=False)
@@ -223,34 +244,59 @@ with fundamentals:
             news_sentiment = df_news['sentiment_summary'][i]
             st.write(f'News Sentiment {news_sentiment}')
     
+#Initialize valuation modelling module 
 with valuation:
-    st.write('Coming soon, valuation modelling of a stock')
-    st.subheader('Multiples Valuation Model')
-    with st.form('Please enter ticker symbols for companies to compare below.'):
-        comp1=st.text_input('Ticker 1')
-        comp2=st.text_input('Ticker 2')
-        comp3=st.text_input('Ticker 3')
+    #Temporary disclaimer
+    st.subheader('In progress: Popular stock valuation models')
 
-        comp_sub = st.form_submit_button('Generate Comparison')
+    val_tab1, val_tab2 = st.tabs(['Multiples Valuation Model', 'Dividend Discount Model'])
+    with val_tab1:
+        #Deploy Multiples Valuation Model
+        st.subheader('Multiples Valuation Model')
 
-    if comp_sub:
-        val_data = yf.Ticker(ticker).info
-        comp_data = []
-        for i in [comp1,comp2,comp3]:
+        #User input for selected comparatives
+        with st.form('Please enter ticker symbols for companies to compare below.'):
+            comp1=st.text_input('Ticker 1')
+            comp2=st.text_input('Ticker 2')
+            comp3=st.text_input('Ticker 3')
+            comp_sub = st.form_submit_button('Generate Comparison')
+
+        #Control flow to pull and compute values only if form is submitted
+        if comp_sub:
+            val_data = yf.Ticker(ticker).info
+            comp_data = []
+            
+            #add pulled values to list of dictionaries in order to convert to dataframe for analysis
+            for i in [comp1,comp2,comp3]:
+
+                #error handling, if API call results in errors, values will not be added to the comparatives list of dictionaries
+                try:
+                    i_data=yf.Ticker(i).info
+                    details={'Company':i_data['shortName'], 'Stock Price':i_data['currentPrice'], 'Earnings Per Share':i_data['trailingEps'], 'P/E Ratio':i_data['trailingPE']}
+                    comp_data.append(details)
+
+                except:
+                    details = {'Company':"",'Stock Price':"",'Earnings Per Share':"", 'P/E Ratio':""}
+                    
+            #convert pulled comparative data to dataframe
+            mult_val = pd.DataFrame.from_records(comp_data)
+            mult_val
+            
+            #if all data pulls resulted in errors and were not added to dataframe, force average price to earnings ratio to 0
+            if mult_val.empty:
+                avg_pe = 0
+                st.write('No Values Returned from API for chosen comparative securities. Make sure you have selected separate companies not Index, ETF, or other securities.')
+            #if values are pulled as expected, compute average price to earnings ratio
+            else:
+                avg_pe = mult_val['P/E Ratio'].mean()
+                st.write('Average Price to Earnings: ',avg_pe)
+            
+            #error handling in case primary ticker chosen by user does not present financials as with index funds or etfs
             try:
-                i_data=yf.Ticker(i).info
-                details={'Company':i_data['shortName'], 'Stock Price':i_data['currentPrice'], 'Earnings Per Share':i_data['trailingEps'], 'P/E Ratio':i_data['trailingPE']}
-                comp_data.append(details)
-
+                ticker_pe = pd.DataFrame({"Ticker": ticker, 'Computed Intrinsic Value': val_data['trailingEps']*avg_pe,'Earnings Per Share':val_data['trailingEps']}, index=[0])
+                ticker_pe
             except:
-                details = {'Company':"",'Stock Price':"",'Earnings Per Share':"", 'P/E Ratio':""}
-                
-        
-        mult_val = pd.DataFrame.from_records(comp_data)
-        mult_val
+                st.write('Error extracting data for chosen ticker, make sure ticker chosen is an individual company, not an Index, ETF, or other security.')
 
-        avg_pe = mult_val['P/E Ratio'].mean()
-        st.write('Average Price to Earnings: ',avg_pe)
-
-        ticker_pe = pd.DataFrame({"Ticker": ticker, 'Computed Intrinsic Value': val_data['trailingEps']*avg_pe,'Earnings Per Share':val_data['trailingEps']}, index=[0])
-        ticker_pe
+    with val_tab2:
+        st.write('Coming Soon: Dividend Discount Model')
