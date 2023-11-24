@@ -184,7 +184,7 @@ with fundamentals:
                     with finCol3:
                         st.subheader('Efficiency')
 
-                        assetTurnover = float(income_statement.iat[income_statement.index.get_loc('nonInterestIncome'),0])/((float(balance_sheet.iat[balance_sheet.index.get_loc('totalAssets'),0])+float(balance_sheet.iat[balance_sheet.index.get_loc('totalAssets'),1]))/2)
+                        assetTurnover = float(income_statement.iat[income_statement.index.get_loc('totalRevenue'),0])/((float(balance_sheet.iat[balance_sheet.index.get_loc('totalAssets'),0])+ float(balance_sheet.iat[balance_sheet.index.get_loc('totalAssets'),1]))/2)
                         st.write('Asset Turnover Ratio: ', round(assetTurnover,4))
 
                         inventoryTurnover = float(income_statement.iat[income_statement.index.get_loc('costofGoodsAndServicesSold'),0])/((float(balance_sheet.iat[balance_sheet.index.get_loc('inventory'),0])+float(balance_sheet.iat[balance_sheet.index.get_loc('inventory'),1]))/2)
@@ -225,3 +225,32 @@ with fundamentals:
     
 with valuation:
     st.write('Coming soon, valuation modelling of a stock')
+    st.subheader('Multiples Valuation Model')
+    with st.form('Please enter ticker symbols for companies to compare below.'):
+        comp1=st.text_input('Ticker 1')
+        comp2=st.text_input('Ticker 2')
+        comp3=st.text_input('Ticker 3')
+
+        comp_sub = st.form_submit_button('Generate Comparison')
+
+    if comp_sub:
+        val_data = yf.Ticker(ticker).info
+        comp_data = []
+        for i in [comp1,comp2,comp3]:
+            try:
+                i_data=yf.Ticker(i).info
+                details={'Company':i_data['shortName'], 'Stock Price':i_data['currentPrice'], 'Earnings Per Share':i_data['trailingEps'], 'P/E Ratio':i_data['trailingPE']}
+                comp_data.append(details)
+
+            except:
+                details = {'Company':"",'Stock Price':"",'Earnings Per Share':"", 'P/E Ratio':""}
+                
+        
+        mult_val = pd.DataFrame.from_records(comp_data)
+        mult_val
+
+        avg_pe = mult_val['P/E Ratio'].mean()
+        st.write('Average Price to Earnings: ',avg_pe)
+
+        ticker_pe = pd.DataFrame({"Ticker": ticker, 'Computed Intrinsic Value': val_data['trailingEps']*avg_pe,'Earnings Per Share':val_data['trailingEps']}, index=[0])
+        ticker_pe
